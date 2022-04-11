@@ -1,0 +1,708 @@
+Description: AWS Glue Job solution for Interim S3 Folder structure Realignment
+Parameters:
+  GlueETLJobSchedule:
+    Description: Schdeule to trigger Glue ETL job
+    Type: String
+    Default: 'cron(0 */2 * * ? *)'
+  GlueCrawlerJobSchedule:
+    Description: Schdeule to trigger Glue Crawler job
+    Type: String
+    Default: 'cron(0 8 * * ? *)'
+  EnvironmentName:
+    Description: Select the name of Environment
+    Type: String
+    AllowedValues:
+        - dev
+        - qa
+        - prod
+  KellogsRegionName:
+    Description: Select the name of the Kellogs Region
+    Type: String
+    AllowedValues:
+        - global
+        - kna
+        - kla
+        - keu
+        - kamea
+  MaxConcurrentRuns:
+    Type: Number
+    Description: The maximum number of concurrent runs allowed for the job
+    Default: 10
+  MaxCapacityShell:
+    Type: Number
+    Description: The number of AWS Glue data processing units (DPUs) that can be allocated when this job runs. A DPU is a relative measure of processing power that consists of 4 vCPUs of compute capacity and 16 GB of memory
+    Default: 0.0625
+  ETLJobTimeOut:
+    Type: Number
+    Description: Glue ETL Job Timeout in Minutes. The default is 240 mins i.e. 4 hours.
+    Default: 240
+  CrawlerJobTimeOut:
+    Type: Number
+    Description: Glue Crawler Job Timeout in Minutes. The default is 240 mins i.e. 4 hours.
+    Default: 240
+  ActivateTrigger:
+    Type: String
+    AllowedValues:
+        - true
+        - False
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Environment Details
+        Parameters:
+          - EnvironmentName
+          - KellogsRegionName
+      - Label:
+          default: Crawler Job Parameters
+        Parameters:
+          - MaxCapacityShell
+Resources:
+   GlueCrawlerJob:
+    Type: 'AWS::Glue::Job'
+    Properties:
+      Role: !Sub
+        - 'arn:aws:iam::${accountid}:role/nga-${env}-glue-service-role'
+        - env: !Ref EnvironmentName
+          accountid: !Ref 'AWS::AccountId'
+      Command:
+        Name: pythonshell
+        PythonVersion: 3
+        ScriptLocation: !Join 
+            - ''
+            - - 's3://klg-nga-'
+              - !Ref EnvironmentName
+              - '-'
+              - !Ref KellogsRegionName
+              - '-src-cd/src_cd/interim_s3_folder_structure_realignment/code/crawler_glue_script_s3_folder_structure_realignment.py'
+      DefaultArguments:
+        '--job-bookmark-option': job-bookmark-enable
+        '--bucket_name_log': ' '
+        '--bucket_name': ' '
+        '--class': 'GlueApp' 
+        '--prefix_s3': 'data/'
+        '--role_name': !Sub
+            - 'arn:aws:iam::${accountid}:role/nga-${env}-glue-service-role'
+            - env: !Ref EnvironmentName
+              accountid: !Ref 'AWS::AccountId'
+      ExecutionProperty:
+        MaxConcurrentRuns: !Ref MaxConcurrentRuns
+      MaxCapacity: !Ref MaxCapacityShell
+      GlueVersion: 0.9
+      MaxRetries: 3
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_crawler_interim_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+      Timeout: !Ref CrawlerJobTimeOut
+      Tags: {"application":"s3_folder_structure_realignment"}
+   GlueCrawlerJobScheduledTriggerRawConfd:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_raw_confd_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler          
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueCrawlerJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobOnDemandTriggerRawConfd:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_raw_confd_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler          
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobScheduledTriggerRawIntrnl:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_raw_intrnl_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueCrawlerJobSchedule
+      StartOnCreation: !Ref ActivateTrigger      
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-intrnl'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobOnDemandTriggerRawIntrnl:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_raw_intrnl_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job      
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-intrnl'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobScheduledTriggerRawProt:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_raw_prot_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueCrawlerJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-prot'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobOnDemandTriggerRawProt:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_raw_prot_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-prot'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobScheduledTriggerClnsConfd:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_clns_confd_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueCrawlerJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub
+                - 'klg-nga-${env}-${kr}-clns-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobOnDemandTriggerClnsConfd:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_clns_confd_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub
+                - 'klg-nga-${env}-${kr}-clns-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobScheduledTriggerClnsIntrnl:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_clns_intrnl_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueCrawlerJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-intrnl'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobOnDemandTriggerClnsIntrnl:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_clns_intrnl_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-intrnl'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobScheduledTriggerClnsProt:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_clns_prot_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueCrawlerJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-prot'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueCrawlerJobOnDemandTriggerClnsProt:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_clns_prot_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: crawler
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueCrawlerJob
+          Arguments:
+            '--bucket_name_log': !Sub
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-prot'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+   GlueETLShellJob:
+    Type: 'AWS::Glue::Job'
+    Properties:
+      Role: !Sub
+        - 'arn:aws:iam::${accountid}:role/nga-${env}-glue-service-role'
+        - env: !Ref EnvironmentName
+          accountid: !Ref 'AWS::AccountId'
+      Command:
+        Name: pythonshell
+        PythonVersion: 3
+        ScriptLocation: !Join 
+            - ''
+            - - 's3://klg-nga-'
+              - !Ref EnvironmentName
+              - '-'
+              - !Ref KellogsRegionName
+              - '-src-cd/src_cd/interim_s3_folder_structure_realignment/code/etl_glue_script_s3_folder_structure_realignment.py'
+      DefaultArguments:
+        '--job-bookmark-option': job-bookmark-enable
+        '--config_bucket_name': ' ' 
+        '--mapping_filename': ' '
+        '--JOB_NAME': ' '
+      ExecutionProperty:
+        MaxConcurrentRuns: !Ref MaxConcurrentRuns
+      MaxCapacity: !Ref MaxCapacityShell
+      GlueVersion: 0.9
+      MaxRetries: 3
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_etl_shell_interim_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+      Timeout: !Ref ETLJobTimeOut
+      Tags: {"application":"s3_folder_structure_realignment"}
+   GlueETLShellJobScheduledTriggerRawConfd:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_raw_confd_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueETLJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobOnDemandTriggerRawConfd:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_raw_confd_s3_folder_structure_realignment-1'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueETLJobSchedule
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobScheduledTriggerRawIntrnl:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_raw_intrnl_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueETLJobSchedule
+      StartOnCreation: !Ref ActivateTrigger      
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-intrnl'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobOnDemandTriggerRawIntrnl:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_raw_intrnl_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-intrnl'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobScheduledTriggerRawProt:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_raw_prot_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueETLJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-prot'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobOnDemandTriggerRawProt:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_raw_prot_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-prot'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobScheduledTriggerClnsConfd:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_clns_confd_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell          
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueETLJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobOnDemandTriggerClnsConfd:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_clns_confd_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell          
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobScheduledTriggerClnsIntrnl:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_clns_intrnl_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueETLJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-intrnl'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobOnDemandTriggerClnsIntrnl:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_clns_intrnl_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-intrnl'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobScheduledTriggerClnsProt:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_scheduled_trigger_clns_prot_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: SCHEDULED
+      Description: Trigger to start Copy file glue job
+      Schedule: !Ref GlueETLJobSchedule
+      StartOnCreation: !Ref ActivateTrigger
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-prot'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName                  
+   GlueETLShellJobOnDemandTriggerClnsProt:
+    Type: 'AWS::Glue::Trigger'
+    Properties:
+      Name: !Sub
+        - 'klg_nga_${env}_${kr}_${job}_ondemand_trigger_clns_prot_s3_folder_structure_realignment'
+        - env: !Ref EnvironmentName
+          kr: !Ref KellogsRegionName
+          job: etlshell
+      Type: ON_DEMAND
+      Description: Trigger to start Copy file glue job
+      Actions:
+        - JobName: !Ref GlueETLShellJob
+          Arguments:
+            '--config_bucket_name': !Sub 
+                - 'klg-nga-${env}-${kr}-src-cd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--mapping_filename': !Sub 
+                - 'klg-nga-${env}-${kr}-clns-prot'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
+            '--JOB_NAME': !Sub 
+                - 'klg-nga-${env}-${kr}-raw-confd'
+                - env: !Ref EnvironmentName
+                  kr: !Ref KellogsRegionName
